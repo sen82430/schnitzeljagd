@@ -57,13 +57,14 @@ function render(){
   } else {
     const m = GAME.missions[s];
     $('nowTtl').textContent = `Aktuell: ${s+1}/${N} – ${m.name}`;
-    $('nowTask').textContent = `${m.short} (${m.proof} per WhatsApp)`;
+    $('nowTask').textContent = `${m.short} (${m.proof} kommt in der App unter «📸 Beweise»)`;
     $('next').textContent = s + 1 >= N ? `✅ Mission ${s+1} erfüllt – Endpunkt freischalten` : `✅ Mission ${s+1} erfüllt – Ziel ${s+2} freischalten`;
   }
   $('next').disabled = step === null || s >= N;
   $('back').disabled = step === null || s === 0;
   $('list').innerHTML = GAME.missions.map((m, i) => `<li class="${i < s ? 'd' : i === s ? 'c' : ''}">${i < s ? '✅ ' : ''}${m.name} – ${m.short}</li>`).join('')
     + `<li class="${s>=N?'c':''}">✕ Endpunkt – ${GAME.end.task}</li>`;
+  if (typeof renderProofs === 'function') renderProofs();
 }
 
 // ---------- Fortschritt ----------
@@ -103,8 +104,8 @@ setInterval(drawKids, 5000);
 $('next').onclick = () => { if (step !== null && step < N) publish(step + 1); };
 $('back').onclick = () => { if (step > 0 && confirm('Einen Schritt zurück? Die Jungs sehen dann wieder das vorherige Ziel.')) publish(step - 1); };
 $('reset').onclick = () => {
-  if (!confirm('Spiel neu starten? Fortschritt auf Ziel 1 – Standorte, Nachrichten und Fragen werden gelöscht.')) return;
-  publish(0); root.child('pos').remove(); root.child('msgs').remove(); root.child('sfx').remove(); root.child('inbox').remove(); order.length = 0;
+  if (!confirm('Spiel neu starten? Fortschritt auf Ziel 1 – Standorte, Nachrichten, Fragen und Beweise werden gelöscht.')) return;
+  publish(0); root.child('pos').remove(); root.child('msgs').remove(); root.child('sfx').remove(); root.child('inbox').remove(); root.child('proofs').remove(); root.child('proofData').remove(); order.length = 0;
 };
 
 // ---------- Nachrichten ----------
@@ -181,11 +182,69 @@ function ping(){
   } catch(e){}
 }
 let flashT = null;
-function flashTitle(){
+function flashTitle(txt){
   clearInterval(flashT);
   const base = 'Schnitzeljagd Admin'; let on = false, n = 0;
-  flashT = setInterval(() => { document.title = (on = !on) ? '💬 Neue Frage!' : base; if (++n > 20){ clearInterval(flashT); document.title = base; } }, 700);
+  flashT = setInterval(() => { document.title = (on = !on) ? (txt || '💬 Neue Frage!') : base; if (++n > 20){ clearInterval(flashT); document.title = base; } }, 700);
 }
+
+// ---------- Beweise (Fotos / Videos) ----------
+var proofsList = [], pFirst = true, pSeenUntil = Date.now();
+const openMedia = {}; // id -> dataURL (bereits geladen)
+const kb = n => n > 1048576 ? (n / 1048576 / 1.37).toFixed(1) + ' MB' : Math.round(n / 1024 / 1.37) + ' KB';
+function renderProofs(){
+  const s = step ?? 0;
+  $('pList').innerHTML = proofsList.length ? proofsList.map(([k, p]) => {
+    const m = GAME.missions[p.mission] || {name:'?'};
+    const canOk = p.mission === s && s < N;
+    const media = openMedia[k] ? (p.type === 'video'
+      ? `<div class="media"><video src="${openMedia[k]}" controls playsinline></video></div>`
+      : `<div class="media"><img src="${openMedia[k]}" alt=""></div>`) : `<div class="media" id="md-${k}"></div>`;
+    return `<div class="it ${(p.t || 0) > pSeenUntil ? 'new' : ''}">
+      <div class="tx"><small>${letterOf(p.dev)} · ${hhmm(p.t)} · ${kb(p.size || 0)}</small>${p.type === 'video' ? '🎥' : '📷'} Ziel ${p.mission + 1}: ${esc(m.name)}</div>
+      <div class="acts">${openMedia[k] ? '' : `<button data-pv="${k}">${p.type === 'video' ? '▶ Ansehen' : '👁 Ansehen'}</button>`}
+        ${canOk ? `<button class="okb" data-pok="${k}">✅ Freischalten</button>` : ''}
+        <button data-pdel="${k}" title="Löschen">🗑</button></div>
+      ${media}</div>`;
+  }).join('') : '<div class="it"><div class="tx"><small>Noch keine Beweise.</small></div></div>';
+  $('pCount').textContent = proofsList.length ? `(${proofsList.length})` : '';
+  $('pClear').style.display = proofsList.length > 1 ? 'block' : 'none';
+}
+root.child('proofs').on('value', snap => {
+  const list = [];
+  snap.forEach(c => { list.unshift([c.key, c.val() || {}]); });
+  const newest = list.length ? (list[0][1].t || 0) : 0;
+  const prevNewest = proofsList.length ? (proofsList[0][1].t || 0) : 0;
+  if (!pFirst && newest > prevNewest){ ping(); flashTitle('📸 Neuer Beweis!'); }
+  pFirst = false;
+  proofsList = list;
+  renderProofs();
+});
+$('pList').addEventListener('click', async e => {
+  const b = e.target.closest('button'); if (!b) return;
+  pSeenUntil = Date.now() + serverOffset;
+  if (b.dataset.pv){
+    const k = b.dataset.pv; b.disabled = true; b.textContent = '⏳ lädt…';
+    try { const d = await root.child('proofData/' + k).once('value'); openMedia[k] = (d.val() || {}).data || ''; }
+    catch(err){ alert('Laden fehlgeschlagen: ' + err.message); }
+    renderProofs();
+  }
+  if (b.dataset.pok){
+    const p = (proofsList.find(([k]) => k === b.dataset.pok) || [])[1];
+    if (p && p.mission === step) publish(step + 1);
+  }
+  if (b.dataset.pdel){
+    const k = b.dataset.pdel;
+    if (!confirm('Diesen Beweis löschen?')) return;
+    delete openMedia[k];
+    root.child('proofData/' + k).remove(); root.child('proofs/' + k).remove();
+  }
+});
+$('pClear').onclick = () => {
+  if (!confirm('Alle Beweise löschen?')) return;
+  for (const k in openMedia) delete openMedia[k];
+  root.child('proofData').remove(); root.child('proofs').remove();
+};
 
 // Sprachmemo
 let rec = null, chunks = [], recStart = 0, recTimer = null, recData = null;

@@ -46,11 +46,14 @@ function render(){
     $('ttl').textContent = '✕ Endpunkt';
     $('task').textContent = GAME.end.task;
     $('proof').textContent = 'Alle Missionen geschafft – ab zum ✕!';
+    $('proofBtn').style.display = 'none';
   } else {
     const t = GAME.missions[s];
     $('ttl').textContent = `Ziel ${s+1}/${N}: ${t.name}`;
     $('task').textContent = t.task;
-    $('proof').textContent = `📲 Schickt das ${t.proof} per WhatsApp an die Leiter. Danach erscheint das nächste Ziel.`;
+    $('proof').textContent = `Sendet das ${t.proof} über «📸 Beweis senden». Sobald die Leiter es geprüft haben, erscheint das nächste Ziel.`;
+    $('proofBtn').style.display = 'block';
+    $('proofBtn').textContent = t.proof === 'Video' ? '🎥 Video-Beweis senden' : '📷 Foto-Beweis senden';
   }
 }
 
@@ -281,4 +284,140 @@ $('inboxClose').onclick = () => {
   $('inboxOverlay').classList.remove('show');
   document.querySelectorAll('#inboxList audio').forEach(a => { try { a.pause(); } catch(e){} });
 };
+
+// ---------- Beweis senden (Foto / Video) ----------
+const VMAX = 40;                  // max. Videolänge in Sekunden
+const MAX_BYTES = 11 * 1024 * 1024; // Obergrenze für die Datenbank
+let pData = null, pType = null, pMission = null;
+let camStream = null, facing = 'environment', vrec = null, vchunks = [], vTimer = null, vStart = 0;
+
+function pShow(part){
+  ['pChoose','pRec','pPreview'].forEach(id => $(id).style.display = id === part ? (id === 'pChoose' ? 'flex' : 'block') : 'none');
+}
+function pStatus(t){ $('pStatus').textContent = t || ''; }
+function stopCam(){
+  try { if (vrec && vrec.state === 'recording') vrec.stop(); } catch(e){}
+  clearInterval(vTimer);
+  if (camStream){ camStream.getTracks().forEach(t => t.stop()); camStream = null; }
+  $('camView').srcObject = null;
+}
+function pReset(){
+  stopCam(); pData = null; pType = null;
+  $('pImg').removeAttribute('src'); $('pVid').removeAttribute('src');
+  pShow('pChoose'); pStatus('');
+}
+
+$('proofBtn').onclick = () => {
+  if (step === null || step >= N) return;
+  pMission = step;
+  const m = GAME.missions[step];
+  $('proofFor').textContent = `Ziel ${step+1}: ${m.name} – gewünscht: ${m.proof}`;
+  pReset();
+  $('proofOverlay').classList.add('show');
+};
+$('proofClose').onclick = () => { pReset(); $('proofOverlay').classList.remove('show'); };
+
+// Foto: Kamera des Handys, dann verkleinern
+$('photoBtn').onclick = () => $('photoInput').click();
+$('photoInput').onchange = e => {
+  const f = e.target.files && e.target.files[0];
+  e.target.value = '';
+  if (!f) return;
+  pStatus('Foto wird vorbereitet…');
+  const url = URL.createObjectURL(f), img = new Image();
+  img.onload = () => {
+    const max = 1400, sc = Math.min(1, max / Math.max(img.naturalWidth, img.naturalHeight));
+    const c = document.createElement('canvas');
+    c.width = Math.round(img.naturalWidth * sc); c.height = Math.round(img.naturalHeight * sc);
+    c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+    URL.revokeObjectURL(url);
+    pData = c.toDataURL('image/jpeg', 0.75); pType = 'foto';
+    $('pImg').src = pData; $('pImg').style.display = 'block'; $('pVid').style.display = 'none';
+    pShow('pPreview'); pStatus('');
+  };
+  img.onerror = () => { URL.revokeObjectURL(url); pStatus('⚠️ Foto konnte nicht gelesen werden.'); };
+  img.src = url;
+};
+
+// Video: direkt in der App aufnehmen (klein, damit es hochgeladen werden kann)
+async function startCam(){
+  stopCam();
+  try {
+    camStream = await navigator.mediaDevices.getUserMedia({
+      video:{facingMode:{ideal:facing}, width:{ideal:640}, height:{ideal:480}, frameRate:{ideal:24}}, audio:true});
+  } catch(e){
+    pStatus('⚠️ Kamera/Mikrofon nicht erlaubt. Bitte erlauben und nochmals versuchen.'); pShow('pChoose'); return false;
+  }
+  $('camView').srcObject = camStream;
+  try { await $('camView').play(); } catch(e){}
+  return true;
+}
+function pickVideoMime(){
+  if (!window.MediaRecorder) return null;
+  for (const t of ['video/mp4', 'video/webm;codecs=vp8,opus', 'video/webm']) if (MediaRecorder.isTypeSupported(t)) return t;
+  return '';
+}
+$('videoBtn').onclick = async () => {
+  if (pickVideoMime() === null){ pStatus('⚠️ Dieses Handy kann in der App kein Video aufnehmen.'); return; }
+  pShow('pRec'); pStatus('');
+  $('vRecBtn').textContent = '⏺ Aufnahme starten'; $('vTime').textContent = `max. ${VMAX} Sekunden`;
+  await startCam();
+};
+$('vFlip').onclick = async () => {
+  if (vrec && vrec.state === 'recording') return;
+  facing = facing === 'environment' ? 'user' : 'environment';
+  await startCam();
+};
+$('vRecBtn').onclick = () => {
+  if (vrec && vrec.state === 'recording'){ vrec.stop(); return; }
+  if (!camStream) return;
+  const mime = pickVideoMime();
+  vchunks = [];
+  try { vrec = new MediaRecorder(camStream, {...(mime ? {mimeType:mime} : {}), videoBitsPerSecond:450000, audioBitsPerSecond:48000}); }
+  catch(e){ vrec = new MediaRecorder(camStream); }
+  vrec.ondataavailable = ev => { if (ev.data && ev.data.size) vchunks.push(ev.data); };
+  vrec.onstop = () => {
+    clearInterval(vTimer);
+    const blob = new Blob(vchunks, {type: vrec.mimeType || mime || 'video/webm'});
+    stopCam();
+    if (blob.size > MAX_BYTES / 1.37){ pStatus('⚠️ Video zu gross – bitte kürzer aufnehmen.'); pShow('pChoose'); return; }
+    const fr = new FileReader();
+    fr.onload = () => {
+      pData = fr.result; pType = 'video';
+      $('pVid').src = pData; $('pVid').style.display = 'block'; $('pImg').style.display = 'none';
+      pShow('pPreview'); pStatus(`Länge ok (${(blob.size/1024/1024).toFixed(1)} MB)`);
+    };
+    fr.readAsDataURL(blob);
+  };
+  vrec.start(1000);
+  vStart = Date.now();
+  $('vRecBtn').textContent = '⏹ Stopp';
+  vTimer = setInterval(() => {
+    const s = Math.floor((Date.now() - vStart) / 1000);
+    $('vTime').textContent = `● ${s} / ${VMAX} s`;
+    if (s >= VMAX && vrec.state === 'recording') vrec.stop();
+  }, 250);
+};
+
+$('pRetry').onclick = () => pReset();
+$('pSend').onclick = async () => {
+  if (!pData) return;
+  if (pData.length > MAX_BYTES){ pStatus('⚠️ Zu gross – bitte nochmals kürzer.'); return; }
+  $('pSend').disabled = true; $('pRetry').disabled = true;
+  pStatus('⏳ Wird hochgeladen… bitte warten und App offen lassen.');
+  try {
+    const id = root.child('proofs').push().key;
+    await root.child('proofData/' + id).set({data:pData});
+    await root.child('proofs/' + id).set({type:pType, mission:pMission, dev:devId, size:pData.length, t:firebase.database.ServerValue.TIMESTAMP});
+    pReset();
+    $('proofOverlay').classList.remove('show');
+    toast('✅ <b>Beweis gesendet!</b><br>Die Leiter prüfen ihn – gleich geht\'s weiter.');
+  } catch(e){
+    pStatus('⚠️ Hochladen fehlgeschlagen – Internet prüfen und nochmals «Senden».');
+  }
+  $('pSend').disabled = false; $('pRetry').disabled = false;
+};
+
+// Installierbar als App (ohne Adressleiste)
+if ('serviceWorker' in navigator){ try { navigator.serviceWorker.register('sw.js'); } catch(e){} }
 })();

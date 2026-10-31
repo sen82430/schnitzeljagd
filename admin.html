@@ -54,6 +54,12 @@ header h1 img{width:24px;height:24px}
 .list .it small{display:block;color:var(--muted);font-size:12px}
 .list .it button{padding:2px 8px;font-size:15px;line-height:1.4}
 .list .it.new{background:#fff6d6}
+.pf .it{flex-wrap:wrap}
+.pf .acts{display:flex;gap:6px}
+.pf .acts button{font-size:13px;padding:5px 9px}
+.pf .acts .okb{background:var(--green);color:#fff;border-color:var(--green);font-weight:700}
+.pf .media{flex-basis:100%}
+.pf .media img,.pf .media video{width:100%;max-height:60vh;border-radius:8px;background:#000;margin-top:6px;object-fit:contain}
 .small{display:block;width:100%;margin-top:8px;padding:6px;font-size:13px}
 .switch{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--muted);cursor:pointer}
 .switch input{width:18px;height:18px}
@@ -81,6 +87,11 @@ header h1 img{width:24px;height:24px}
         <button id="back">↩ Einen Schritt zurück</button>
         <button id="reset" class="danger">⟲ Neustart</button>
       </div>
+    </div>
+    <div class="card pf">
+      <b>📸 Beweise <span id="pCount"></span></b>
+      <div id="pList" class="list"></div>
+      <button id="pClear" class="small danger" style="display:none">Alle Beweise löschen</button>
     </div>
     <div class="card qs">
       <div class="row" style="margin:0;align-items:center">
