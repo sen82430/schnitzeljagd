@@ -14,8 +14,8 @@ const N = GAME.missions.length;
 
 const map = L.map('map', {zoomControl:false}).setView([GAME.start.lat, GAME.start.lng], 16);
 // Karte ohne Strassennamen und Beschriftungen
-L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager_nolabels/{z}/{x}/{y}{r}.png',
-  {maxZoom:19, subdomains:'abcd', attribution:'© OpenStreetMap © CARTO'}).addTo(map);
+L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}',
+  {maxZoom:19, maxNativeZoom:16, attribution:'Tiles © Esri'}).addTo(map);
 const layer = L.layerGroup().addTo(map);
 const icon = (html, s, anchor) => L.divIcon({className:'', html, iconSize:[s,s], iconAnchor:anchor || [s/2,s/2]});
 
