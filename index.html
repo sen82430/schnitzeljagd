@@ -39,6 +39,12 @@ header h1 img{width:30px;height:30px}
 .inbox{text-align:left}
 .inbox div{border-bottom:1px solid #cbb68a;padding:8px 0;font-size:16px}
 .inbox time{display:block;font-size:12px;opacity:.7}
+.inbox div.mine{text-align:right;color:var(--green)}
+.ask{display:flex;gap:6px;margin-bottom:10px}
+.ask textarea{flex:1;font:inherit;font-size:16px;padding:8px;border:1.5px solid var(--ink);border-radius:10px;background:#fffaf0;min-height:44px;resize:none}
+.ask button{font:inherit;font-size:16px;padding:0 12px;border:2px solid var(--ink);border-radius:10px;background:var(--green);color:#fff}
+.ask button:disabled{opacity:.5}
+.askOff{display:none;font-size:15px;margin-bottom:10px;opacity:.8}
 #status{font-size:13px;opacity:.9}
 #card{position:absolute;left:10px;right:10px;bottom:calc(env(safe-area-inset-bottom) + 10px);z-index:600;background:var(--paper);
   border:2px solid var(--ink);border-radius:14px;padding:12px 14px;box-shadow:0 4px 16px rgba(0,0,0,.4)}
@@ -109,6 +115,11 @@ header h1 img{width:30px;height:30px}
 <div class="overlay" id="inboxOverlay">
   <div class="sheet">
     <h2>📢 Nachrichten</h2>
+    <div class="ask" id="askBox">
+      <textarea id="askText" maxlength="300" placeholder="Frage oder Nachricht an die Leiter…"></textarea>
+      <button id="askSend">Senden</button>
+    </div>
+    <div class="askOff" id="askOff">🔒 Fragen an die Leiter sind gerade gesperrt.</div>
     <div class="inbox" id="inboxList"></div>
     <button class="main" id="inboxClose" style="margin-top:14px">Schliessen</button>
   </div>

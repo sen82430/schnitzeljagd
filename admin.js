@@ -103,8 +103,8 @@ setInterval(drawKids, 5000);
 $('next').onclick = () => { if (step !== null && step < N) publish(step + 1); };
 $('back').onclick = () => { if (step > 0 && confirm('Einen Schritt zurück? Die Jungs sehen dann wieder das vorherige Ziel.')) publish(step - 1); };
 $('reset').onclick = () => {
-  if (!confirm('Spiel neu starten? Fortschritt auf Ziel 1 und alle Handy-Standorte löschen.')) return;
-  publish(0); root.child('pos').remove(); root.child('msgs').remove(); root.child('sfx').remove(); order.length = 0;
+  if (!confirm('Spiel neu starten? Fortschritt auf Ziel 1 – Standorte, Nachrichten und Fragen werden gelöscht.')) return;
+  publish(0); root.child('pos').remove(); root.child('msgs').remove(); root.child('sfx').remove(); root.child('inbox').remove(); order.length = 0;
 };
 
 // ---------- Nachrichten ----------
@@ -121,14 +121,71 @@ $('sendText').onclick = async () => {
   $('sendText').disabled = false;
 };
 
-root.child('msgs').limitToLast(10).on('value', s => {
+const hhmm = t => t ? new Date(t).toLocaleTimeString('de-CH', {hour:'2-digit', minute:'2-digit'}) : '';
+root.child('msgs').on('value', s => {
   const list = [];
-  s.forEach(c => { list.unshift(c.val()); });
-  $('sent').innerHTML = list.map(m => {
-    const time = m.t ? new Date(m.t).toLocaleTimeString('de-CH', {hour:'2-digit', minute:'2-digit'}) : '';
-    return `<div>${time} · ${m.type === 'audio' ? '🎙️ Sprachmemo' : esc(m.text)}</div>`;
-  }).join('');
+  s.forEach(c => { list.unshift([c.key, c.val() || {}]); });
+  $('sent').innerHTML = list.map(([k, m]) =>
+    `<div class="it"><div class="tx"><small>${hhmm(m.t)}</small>${m.type === 'audio' ? '🎙️ Sprachmemo' : esc(m.text)}</div><button data-del-msg="${k}" title="Löschen">🗑</button></div>`
+  ).join('');
+  $('sentClear').style.display = list.length > 1 ? 'block' : 'none';
 });
+$('sent').addEventListener('click', e => {
+  const k = e.target.dataset.delMsg; if (k) root.child('msgs/' + k).remove();
+});
+$('sentClear').onclick = () => { if (confirm('Alle eigenen Nachrichten löschen? Sie verschwinden auch bei den Jungs.')) root.child('msgs').remove(); };
+
+// ---------- Fragen der Jungs ----------
+let qFirst = true, qSeenUntil = Date.now() + serverOffset;
+const letterOf = id => { const i = order.indexOf(id); return i >= 0 ? 'Handy ' + String.fromCharCode(65 + i) : 'Handy ?'; };
+root.child('inbox').on('value', s => {
+  const list = [];
+  s.forEach(c => { list.unshift([c.key, c.val() || {}]); });
+  const newest = list.length ? (list[0][1].t || 0) : 0;
+  if (!qFirst && newest > qSeenUntil){ ping(); flashTitle(); }
+  qFirst = false;
+  $('qList').innerHTML = list.length ? list.map(([k, q]) =>
+    `<div class="it ${(q.t || 0) > qSeenUntil ? 'new' : ''}"><div class="tx"><small>${letterOf(q.dev)} · ${hhmm(q.t)}</small>${esc(q.text)}</div><button data-del-q="${k}" title="Löschen">🗑</button></div>`
+  ).join('') : '<div class="it"><div class="tx"><small>Noch keine Fragen.</small></div></div>';
+  $('qCount').textContent = list.length ? `(${list.length})` : '';
+  $('qClear').style.display = list.length > 1 ? 'block' : 'none';
+});
+$('qList').addEventListener('click', e => {
+  const k = e.target.dataset.delQ; if (k) root.child('inbox/' + k).remove();
+  qSeenUntil = Date.now() + serverOffset;
+});
+$('qClear').onclick = () => { if (confirm('Alle Fragen löschen?')) root.child('inbox').remove(); };
+
+// Fragen erlauben / sperren
+root.child('settings/questions').on('value', s => {
+  const on = s.val() !== false;
+  $('qAllow').checked = on;
+  $('qAllowTxt').textContent = on ? 'erlaubt' : 'gesperrt';
+  document.querySelector('.qs').classList.toggle('off', !on);
+});
+$('qAllow').onchange = () => root.child('settings/questions').set($('qAllow').checked);
+
+// Hinweis bei neuer Frage: Ton + blinkender Tab-Titel
+let pingCtx = null;
+document.addEventListener('click', () => { if (!pingCtx){ try { pingCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch(e){} } }, {once:true});
+function ping(){
+  try {
+    if (!pingCtx) return;
+    pingCtx.resume();
+    [0, .15].forEach((d, i) => {
+      const o = pingCtx.createOscillator(), g = pingCtx.createGain(), t = pingCtx.currentTime + d;
+      o.frequency.value = [1046, 1568][i]; g.gain.setValueAtTime(.0001, t);
+      g.gain.exponentialRampToValueAtTime(.35, t + .02); g.gain.exponentialRampToValueAtTime(.0001, t + .35);
+      o.connect(g); g.connect(pingCtx.destination); o.start(t); o.stop(t + .4);
+    });
+  } catch(e){}
+}
+let flashT = null;
+function flashTitle(){
+  clearInterval(flashT);
+  const base = 'Schnitzeljagd Admin'; let on = false, n = 0;
+  flashT = setInterval(() => { document.title = (on = !on) ? '💬 Neue Frage!' : base; if (++n > 20){ clearInterval(flashT); document.title = base; } }, 700);
+}
 
 // Sprachmemo
 let rec = null, chunks = [], recStart = 0, recTimer = null, recData = null;

@@ -236,15 +236,48 @@ root.child('sfx').limitToLast(3).on('child_added', c => {
   toast(`${s.emoji} <b>${s.name}</b>`);
 });
 
-$('inboxBtn').onclick = () => {
-  const list = [...msgs.entries()].sort((a, b) => (b[1].t || 0) - (a[1].t || 0));
-  $('inboxList').innerHTML = list.length ? list.map(([id, m]) =>
-    `<div><time>${fmtTime(m.t)}</time>${m.text ? esc(m.text) : ''}${m.type === 'audio' && m.audio ? `<audio controls playsinline preload="none" src="${m.audio}" style="width:100%;margin-top:4px"></audio>` : ''}</div>`
+// ---------- Fragen an die Leiter ----------
+const mine = new Map(); // eigene Fragen
+let inboxOpen = false;
+let askAllowed = true;
+root.child('settings/questions').on('value', s => { askAllowed = s.val() !== false; updateAsk(); });
+function updateAsk(){
+  $('askBox').style.display = askAllowed ? 'flex' : 'none';
+  $('askOff').style.display = askAllowed ? 'none' : 'block';
+}
+const qref = root.child('inbox').orderByChild('dev').equalTo(devId);
+qref.on('child_added', c => { mine.set(c.key, c.val() || {}); if (inboxOpen) renderInbox(); });
+qref.on('child_removed', c => { mine.delete(c.key); if (inboxOpen) renderInbox(); });
+
+$('askSend').onclick = () => {
+  const text = $('askText').value.trim();
+  if (!text || !askAllowed) return;
+  $('askSend').disabled = true;
+  root.child('inbox').push({dev:devId, text:text.slice(0, 300), t:firebase.database.ServerValue.TIMESTAMP})
+    .then(() => { $('askText').value = ''; toast('✉️ Nachricht an die Leiter gesendet'); })
+    .catch(() => toast('⚠️ Senden fehlgeschlagen – Internet prüfen'));
+  setTimeout(() => { $('askSend').disabled = false; }, 8000);
+};
+
+// ---------- Nachrichten-Fenster ----------
+function renderInbox(){
+  const items = [
+    ...[...msgs.entries()].map(([id, m]) => ({...m, from:'leiter'})),
+    ...[...mine.values()].map(m => ({...m, from:'ich'}))
+  ].sort((a, b) => (b.t || 0) - (a.t || 0));
+  $('inboxList').innerHTML = items.length ? items.map(m => m.from === 'ich'
+    ? `<div class="mine"><time>${fmtTime(m.t)} · Du</time>${esc(m.text)}</div>`
+    : `<div><time>${fmtTime(m.t)} · Leiter</time>${m.text ? esc(m.text) : ''}${m.type === 'audio' && m.audio ? `<audio controls playsinline preload="none" src="${m.audio}" style="width:100%;margin-top:4px"></audio>` : ''}</div>`
   ).join('') : '<div>Noch keine Nachrichten.</div>';
-  list.forEach(([id]) => seen.add(id)); saveSeen(); updateBadge();
+}
+mref.on('child_removed', () => { if (inboxOpen) renderInbox(); });
+$('inboxBtn').onclick = () => {
+  inboxOpen = true; updateAsk(); renderInbox();
+  [...msgs.keys()].forEach(id => seen.add(id)); saveSeen(); updateBadge();
   $('inboxOverlay').classList.add('show');
 };
 $('inboxClose').onclick = () => {
+  inboxOpen = false;
   $('inboxOverlay').classList.remove('show');
   document.querySelectorAll('#inboxList audio').forEach(a => { try { a.pause(); } catch(e){} });
 };
