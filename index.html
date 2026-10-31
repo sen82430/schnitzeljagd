@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#3b2a17">
+<title>JW Schnitzeljagd</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link href="https://fonts.googleapis.com/css2?family=IM+Fell+English+SC&family=IM+Fell+English&display=swap" rel="stylesheet">
+<style>
+:root{--paper:#f1e2bf;--paper2:#e6d1a2;--ink:#3b2a17;--red:#8b1e1e;--green:#3f6b2a}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%;overflow:hidden;background:var(--paper);color:var(--ink);font-family:'IM Fell English',Georgia,serif}
+#map{position:absolute;inset:0}
+.leaflet-container{background:var(--paper);font-family:inherit}
+.leaflet-tile-pane{filter:sepia(.9) saturate(.65) contrast(.95) brightness(1.03)}
+#vignette{position:absolute;inset:0;pointer-events:none;z-index:450;box-shadow:inset 0 0 90px 35px rgba(80,50,15,.5)}
+header{position:absolute;top:0;left:0;right:0;z-index:500;padding:calc(env(safe-area-inset-top) + 10px) 16px 10px;
+  background:linear-gradient(var(--ink),rgba(59,42,23,.85));color:var(--paper);display:flex;align-items:center;justify-content:space-between}
+header h1{margin:0;font-family:'IM Fell English SC',serif;font-size:21px;letter-spacing:1px}
+#status{font-size:13px;opacity:.9}
+#card{position:absolute;left:10px;right:10px;bottom:calc(env(safe-area-inset-bottom) + 10px);z-index:600;background:var(--paper);
+  border:2px solid var(--ink);border-radius:14px;padding:12px 14px;box-shadow:0 4px 16px rgba(0,0,0,.4)}
+#dots{display:flex;gap:6px;margin-bottom:6px}
+#dots span{flex:1;height:6px;border-radius:3px;background:#cbb68a}
+#dots span.d{background:var(--green)}#dots span.c{background:var(--red)}
+#card h2{margin:0 0 4px;font-family:'IM Fell English SC',serif;font-size:20px}
+#card p{margin:0 0 6px;font-size:16px;line-height:1.35}
+#card .proof{font-size:14px;font-style:italic;color:var(--green)}
+#card button{margin-top:6px;width:100%;padding:10px;font:inherit;font-size:16px;border:2px solid var(--ink);border-radius:10px;background:var(--paper2);color:var(--ink)}
+.pin{width:38px;height:38px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);background:var(--red);border:3px solid var(--paper);
+  box-shadow:0 2px 6px rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;animation:bob 1.6s ease-in-out infinite}
+.pin b{transform:rotate(45deg);color:#fff;font:700 16px Georgia,serif}
+@keyframes bob{0%,100%{margin-top:0}50%{margin-top:-6px}}
+.ok{font-size:20px;line-height:24px;text-align:center;opacity:.8}
+.emo{font-size:30px;line-height:34px;text-align:center;filter:drop-shadow(0 2px 2px rgba(0,0,0,.5))}
+.xmark{font-family:'IM Fell English SC',serif;color:var(--red);font-size:46px;line-height:44px;text-align:center;text-shadow:0 0 3px var(--paper),0 0 6px var(--paper);animation:bob 1.6s ease-in-out infinite}
+.me{width:20px;height:20px;border-radius:50%;background:#2a6fdb;border:3px solid #fff;animation:pulse 1s infinite}
+@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(42,111,219,.7)}100%{box-shadow:0 0 0 18px rgba(42,111,219,0)}}
+#toast{position:absolute;left:50%;top:80px;transform:translateX(-50%) translateY(-20px);z-index:700;opacity:0;pointer-events:none;
+  background:var(--ink);color:var(--paper);padding:16px 18px;border-radius:12px;font-size:18px;text-align:center;
+  transition:all .35s ease;width:min(90vw,380px);box-shadow:0 6px 20px rgba(0,0,0,.45)}
+#toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+#banner{position:absolute;left:12px;right:12px;top:calc(env(safe-area-inset-top) + 56px);z-index:550;display:none;
+  background:var(--red);color:#fff;padding:10px 12px;border-radius:10px;font-size:15px}
+.leaflet-popup-content-wrapper,.leaflet-popup-tip{background:var(--paper);color:var(--ink)}
+.leaflet-popup-content{font-size:15px;margin:10px 14px}
+#fatal{padding:24px;font:18px/1.4 system-ui,sans-serif}
+</style>
+</head>
+<body>
+<div id="map"></div>
+<div id="vignette"></div>
+<header><h1>JW Schnitzeljagd</h1><span id="status">lade…</span></header>
+<div id="banner"></div>
+<div id="toast"></div>
+<div id="card">
+  <div id="dots"></div>
+  <h2 id="ttl">Lade…</h2>
+  <p id="task"></p>
+  <div class="proof" id="proof"></div>
+  <button id="go">🗺️ Ziel auf der Karte zeigen</button>
+</div>
+
+<!-- Lader: holt immer die neuste Version der Dateien (kein Cache-Problem nach Updates) -->
+<script>
+(async function(){
+  let v = String(Date.now());
+  try { const r = await fetch('version.json?t=' + Date.now(), {cache:'no-store'}); v = String((await r.json()).v); } catch(e){}
+  window.APP_VERSION = v;
+  const files = [
+    'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js',
+    'https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js',
+    'https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js',
+    'config.js?v=' + v, 'game.js?v=' + v, 'player.js?v=' + v
+  ];
+  for (const src of files){
+    await new Promise((ok, fail) => { const s = document.createElement('script'); s.src = src; s.onload = ok; s.onerror = () => fail(src); document.body.appendChild(s); });
+  }
+})().catch(src => {
+  document.body.innerHTML = '<div id="fatal">⚠️ Laden fehlgeschlagen.<br>Bitte Internet prüfen und die Seite neu laden.<br><small>(' + src + ')</small></div>';
+});
+</script>
+</body>
+</html>

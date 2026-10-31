@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex">
+<title>Schnitzeljagd Admin</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+:root{--bg:#f6f3ec;--card:#fff;--ink:#2b2117;--muted:#7a6a58;--red:#a12b2b;--green:#2f7a3a;--line:#ddd2bf;--blue:#2a6fdb}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.4 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+#gate{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:var(--bg);z-index:2000}
+#gate form{background:var(--card);padding:24px;border-radius:14px;border:1px solid var(--line);width:min(90vw,320px);text-align:center}
+#gate input{width:100%;font-size:24px;padding:10px;text-align:center;border:1px solid var(--line);border-radius:10px;margin:12px 0}
+header{position:sticky;top:0;z-index:1000;background:var(--ink);color:#fff;padding:calc(env(safe-area-inset-top) + 8px) 14px 8px;display:flex;justify-content:space-between;align-items:center}
+header h1{font-size:16px;margin:0}
+#status{font-size:13px}
+#layout{display:flex;flex-direction:column}
+#map{height:46vh;min-height:260px}
+#side{padding:12px 14px 40px}
+@media (min-width:900px){#layout{flex-direction:row;height:calc(100vh - 42px)}#map{height:auto;flex:1}#side{width:440px;overflow:auto}}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:12px}
+.now h2{margin:0 0 4px;font-size:18px}
+.now p{margin:0;color:var(--muted)}
+button{font:inherit;border:1px solid var(--line);background:#fff;border-radius:10px;padding:9px 12px;cursor:pointer}
+button:disabled{opacity:.5;cursor:default}
+.big{display:block;width:100%;padding:16px;font-size:17px;font-weight:700;margin-top:10px;background:var(--green);color:#fff;border-color:var(--green)}
+.row{display:flex;gap:8px;margin-top:8px}
+.row button{flex:1}
+.danger{color:var(--red);border-color:var(--red)}
+ol{margin:0;padding-left:22px}
+li{padding:4px 0}
+li.d{color:var(--green)} li.c{font-weight:700}
+.dot{display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--blue);margin-right:6px}
+.old{color:var(--red)}
+.num{width:28px;height:28px;border-radius:50%;color:#fff;font:700 14px/24px system-ui;text-align:center;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.4)}
+.emo{font-size:26px;line-height:30px;text-align:center}
+.me{width:18px;height:18px;border-radius:50%;background:var(--blue);border:3px solid #fff;box-shadow:0 0 6px rgba(0,0,0,.4)}
+.lbl{background:var(--blue);color:#fff;border:none;border-radius:6px;padding:1px 6px;font-weight:700;box-shadow:none}
+.lbl:before{display:none}
+#ver{color:var(--muted);font-size:12px;text-align:center}
+#fatal{padding:24px;font:18px/1.4 system-ui,sans-serif}
+</style>
+</head>
+<body>
+<div id="gate"><form id="gateForm" onsubmit="return false"><b>Admin-Portal</b><input id="pin" type="password" inputmode="numeric" placeholder="PIN" autocomplete="off"><button class="big" style="margin:0">Öffnen</button></form></div>
+<header><h1>🗺️ Schnitzeljagd – Admin</h1><span id="status">lade…</span></header>
+<div id="layout">
+  <div id="map"></div>
+  <div id="side">
+    <div class="card now">
+      <h2 id="nowTtl">Lade…</h2>
+      <p id="nowTask"></p>
+      <button class="big" id="next" disabled>✅ Mission erfüllt – freischalten</button>
+      <div class="row">
+        <button id="back">↩ Einen Schritt zurück</button>
+        <button id="reset" class="danger">⟲ Neustart</button>
+      </div>
+    </div>
+    <div class="card"><b>📍 Gruppe</b> <button id="zoomKids" style="float:right;padding:4px 10px">Zoomen</button><div id="kids" style="margin-top:6px">Noch kein Standort.</div></div>
+    <div class="card"><b>Ablauf</b><ol id="list"></ol></div>
+    <div id="ver"></div>
+  </div>
+</div>
+
+<script>
+(async function(){
+  let v = String(Date.now());
+  try { const r = await fetch('version.json?t=' + Date.now(), {cache:'no-store'}); v = String((await r.json()).v); } catch(e){}
+  window.APP_VERSION = v;
+  const files = [
+    'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js',
+    'https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js',
+    'https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js',
+    'config.js?v=' + v, 'game.js?v=' + v, 'admin.js?v=' + v
+  ];
+  for (const src of files){
+    await new Promise((ok, fail) => { const s = document.createElement('script'); s.src = src; s.onload = ok; s.onerror = () => fail(src); document.body.appendChild(s); });
+  }
+})().catch(src => {
+  document.body.innerHTML = '<div id="fatal">⚠️ Laden fehlgeschlagen.<br>Bitte Internet prüfen und neu laden.<br><small>(' + src + ')</small></div>';
+});
+</script>
+</body>
+</html>
