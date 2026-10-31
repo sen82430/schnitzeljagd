@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="robots" content="noindex">
+<link rel="icon" href="icon.png">
 <title>Schnitzeljagd Admin</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <style>
@@ -39,13 +40,28 @@ li.d{color:var(--green)} li.c{font-weight:700}
 .me{width:18px;height:18px;border-radius:50%;background:var(--blue);border:3px solid #fff;box-shadow:0 0 6px rgba(0,0,0,.4)}
 .lbl{background:var(--blue);color:#fff;border:none;border-radius:6px;padding:1px 6px;font-weight:700;box-shadow:none}
 .lbl:before{display:none}
+.msg textarea{width:100%;font:inherit;padding:8px 10px;border:1px solid var(--line);border-radius:8px;margin-top:8px;min-height:60px;resize:vertical}
+.send{display:block;width:100%;margin-top:8px;padding:11px;font-weight:700;background:var(--ink);color:#fff;border-color:var(--ink)}
+.rec{display:flex;align-items:center;gap:10px;margin-top:10px}
+.rec button{flex:1;padding:11px}
+.rec button.on{background:var(--red);color:#fff;border-color:var(--red)}
+#recInfo{font-variant-numeric:tabular-nums;color:var(--red);font-weight:700}
+#sent{margin-top:10px;font-size:13px;color:var(--muted)}
+#sent div{padding:3px 0;border-top:1px solid var(--line)}
+header h1{display:flex;align-items:center;gap:8px}
+header h1 img{width:24px;height:24px}
+.pre{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--muted);margin:8px 0}
+.sfx{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+.sfx button{padding:8px 2px;display:flex;flex-direction:column;align-items:center;gap:2px;font-size:11px;line-height:1.1}
+.sfx button span{font-size:24px}
+.sfx button.hit{background:var(--ink);color:#fff}
 #ver{color:var(--muted);font-size:12px;text-align:center}
 #fatal{padding:24px;font:18px/1.4 system-ui,sans-serif}
 </style>
 </head>
 <body>
 <div id="gate"><form id="gateForm" onsubmit="return false"><b>Admin-Portal</b><input id="pin" type="password" inputmode="numeric" placeholder="PIN" autocomplete="off"><button class="big" style="margin:0">Öffnen</button></form></div>
-<header><h1>🗺️ Schnitzeljagd – Admin</h1><span id="status">lade…</span></header>
+<header><h1><img src="jw-logo.png" alt="">Schnitzeljagd – Admin</h1><span id="status">lade…</span></header>
 <div id="layout">
   <div id="map"></div>
   <div id="side">
@@ -57,6 +73,25 @@ li.d{color:var(--green)} li.c{font-weight:700}
         <button id="back">↩ Einen Schritt zurück</button>
         <button id="reset" class="danger">⟲ Neustart</button>
       </div>
+    </div>
+    <div class="card msg">
+      <b>📢 Nachricht an die Jungs</b>
+      <textarea id="msgText" placeholder="z. B. Achtung, ihr seid zu weit gelaufen!"></textarea>
+      <button id="sendText" class="send">Text senden</button>
+      <div class="rec">
+        <button id="recBtn">🎙️ Sprachmemo aufnehmen</button>
+        <span id="recInfo"></span>
+      </div>
+      <div id="recPreview" style="display:none">
+        <audio id="recAudio" controls style="width:100%;margin-top:8px"></audio>
+        <div class="row"><button id="recSend" class="send" style="margin:0">Sprachmemo senden</button><button id="recDiscard">Verwerfen</button></div>
+      </div>
+      <div id="sent"></div>
+    </div>
+    <div class="card">
+      <b>🔊 Soundboard</b>
+      <label class="pre"><input type="checkbox" id="preview"> Nur hier vorhören (nicht senden)</label>
+      <div class="sfx" id="sfxGrid"></div>
     </div>
     <div class="card"><b>📍 Gruppe</b> <button id="zoomKids" style="float:right;padding:4px 10px">Zoomen</button><div id="kids" style="margin-top:6px">Noch kein Standort.</div></div>
     <div class="card"><b>Ablauf</b><ol id="list"></ol></div>
@@ -73,7 +108,7 @@ li.d{color:var(--green)} li.c{font-weight:700}
     'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js',
     'https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js',
     'https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js',
-    'config.js?v=' + v, 'game.js?v=' + v, 'admin.js?v=' + v
+    'config.js?v=' + v, 'game.js?v=' + v, 'sounds.js?v=' + v, 'admin.js?v=' + v
   ];
   for (const src of files){
     await new Promise((ok, fail) => { const s = document.createElement('script'); s.src = src; s.onload = ok; s.onerror = () => fail(src); document.body.appendChild(s); });

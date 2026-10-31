@@ -4,6 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#3b2a17">
+<link rel="icon" href="icon.png">
+<link rel="apple-touch-icon" href="icon.png">
 <title>JW Schnitzeljagd</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <link href="https://fonts.googleapis.com/css2?family=IM+Fell+English+SC&family=IM+Fell+English&display=swap" rel="stylesheet">
@@ -17,7 +19,26 @@ html,body{margin:0;height:100%;overflow:hidden;background:var(--paper);color:var
 #vignette{position:absolute;inset:0;pointer-events:none;z-index:450;box-shadow:inset 0 0 90px 35px rgba(80,50,15,.5)}
 header{position:absolute;top:0;left:0;right:0;z-index:500;padding:calc(env(safe-area-inset-top) + 10px) 16px 10px;
   background:linear-gradient(var(--ink),rgba(59,42,23,.85));color:var(--paper);display:flex;align-items:center;justify-content:space-between}
-header h1{margin:0;font-family:'IM Fell English SC',serif;font-size:21px;letter-spacing:1px}
+header h1{margin:0;font-family:'IM Fell English SC',serif;font-size:21px;letter-spacing:1px;display:flex;align-items:center;gap:8px}
+header h1 img{width:30px;height:30px}
+.btns{display:flex;gap:6px;margin-top:6px}
+#card .btns button{margin:0;width:auto;flex:1;padding:8px 6px;font-size:14px}
+#card .btns button.ico{flex:0 0 48px;position:relative}
+#unread{position:absolute;top:-6px;right:-6px;background:var(--red);color:#fff;border-radius:10px;font:700 12px/18px system-ui;min-width:18px;padding:0 4px;display:none}
+.overlay{position:absolute;inset:0;z-index:800;background:rgba(40,28,14,.65);display:none;align-items:center;justify-content:center;padding:20px}
+.overlay.show{display:flex}
+.sheet{background:var(--paper);border:2px solid var(--ink);border-radius:16px;padding:20px;width:min(100%,400px);max-height:80vh;overflow:auto;text-align:center;box-shadow:0 10px 30px rgba(0,0,0,.5)}
+.sheet h2{margin:6px 0 10px;font-family:'IM Fell English SC',serif;font-size:24px}
+.sheet p{font-size:17px;line-height:1.4;margin:0 0 14px;white-space:pre-wrap}
+.sheet button.main{width:100%;padding:14px;font:inherit;font-size:19px;border:2px solid var(--ink);border-radius:12px;background:var(--ink);color:var(--paper)}
+.sheet audio{width:100%;margin:6px 0 14px}
+#startScreen{background:var(--paper);display:flex}
+#startScreen.hide{display:none}
+#startScreen img{width:120px;height:120px}
+#startScreen small{display:block;margin-top:12px;font-size:14px;opacity:.8}
+.inbox{text-align:left}
+.inbox div{border-bottom:1px solid #cbb68a;padding:8px 0;font-size:16px}
+.inbox time{display:block;font-size:12px;opacity:.7}
 #status{font-size:13px;opacity:.9}
 #card{position:absolute;left:10px;right:10px;bottom:calc(env(safe-area-inset-bottom) + 10px);z-index:600;background:var(--paper);
   border:2px solid var(--ink);border-radius:14px;padding:12px 14px;box-shadow:0 4px 16px rgba(0,0,0,.4)}
@@ -51,7 +72,7 @@ header h1{margin:0;font-family:'IM Fell English SC',serif;font-size:21px;letter-
 <body>
 <div id="map"></div>
 <div id="vignette"></div>
-<header><h1>JW Schnitzeljagd</h1><span id="status">lade…</span></header>
+<header><h1><img src="jw-logo.png" alt="">JW Schnitzeljagd</h1><span id="status">lade…</span></header>
 <div id="banner"></div>
 <div id="toast"></div>
 <div id="card">
@@ -59,7 +80,38 @@ header h1{margin:0;font-family:'IM Fell English SC',serif;font-size:21px;letter-
   <h2 id="ttl">Lade…</h2>
   <p id="task"></p>
   <div class="proof" id="proof"></div>
-  <button id="go">🗺️ Ziel auf der Karte zeigen</button>
+  <div class="btns">
+    <button id="go">🗺️ Ziel zeigen</button>
+    <button id="meBtn">📍 Mein Standort</button>
+    <button id="inboxBtn" class="ico" aria-label="Nachrichten">📢<span id="unread"></span></button>
+  </div>
+</div>
+
+<div class="overlay" id="startScreen">
+  <div class="sheet">
+    <img src="jw-logo-dark.png" alt="JW">
+    <h2>JW Schnitzeljagd</h2>
+    <p>Lasst diese Seite die ganze Zeit offen und sperrt das Handy nicht – sonst verpasst ihr Nachrichten der Leiter.</p>
+    <button class="main" id="startBtn">Los geht's!</button>
+    <small>Beim Start bitte den Standort erlauben.</small>
+  </div>
+</div>
+
+<div class="overlay" id="msgOverlay">
+  <div class="sheet">
+    <h2>📢 Nachricht der Leiter</h2>
+    <p id="msgText"></p>
+    <audio id="msgAudio" controls playsinline style="display:none"></audio>
+    <button class="main" id="msgOk">OK</button>
+  </div>
+</div>
+
+<div class="overlay" id="inboxOverlay">
+  <div class="sheet">
+    <h2>📢 Nachrichten</h2>
+    <div class="inbox" id="inboxList"></div>
+    <button class="main" id="inboxClose" style="margin-top:14px">Schliessen</button>
+  </div>
 </div>
 
 <!-- Lader: holt immer die neuste Version der Dateien (kein Cache-Problem nach Updates) -->
@@ -72,7 +124,7 @@ header h1{margin:0;font-family:'IM Fell English SC',serif;font-size:21px;letter-
     'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js',
     'https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js',
     'https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js',
-    'config.js?v=' + v, 'game.js?v=' + v, 'player.js?v=' + v
+    'config.js?v=' + v, 'game.js?v=' + v, 'sounds.js?v=' + v, 'player.js?v=' + v
   ];
   for (const src of files){
     await new Promise((ok, fail) => { const s = document.createElement('script'); s.src = src; s.onload = ok; s.onerror = () => fail(src); document.body.appendChild(s); });

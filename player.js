@@ -13,7 +13,9 @@ const root = db.ref('sj');
 const N = GAME.missions.length;
 
 const map = L.map('map', {zoomControl:false}).setView([GAME.start.lat, GAME.start.lng], 16);
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom:19, attribution:'© OpenStreetMap'}).addTo(map);
+// Karte ohne Strassennamen und Beschriftungen
+L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager_nolabels/{z}/{x}/{y}{r}.png',
+  {maxZoom:19, subdomains:'abcd', attribution:'© OpenStreetMap © CARTO'}).addTo(map);
 const layer = L.layerGroup().addTo(map);
 const icon = (html, s, anchor) => L.divIcon({className:'', html, iconSize:[s,s], iconAnchor:anchor || [s/2,s/2]});
 
@@ -82,16 +84,22 @@ try { devId = localStorage.getItem('sjDev'); if (!devId){ devId = Math.random().
 catch(e){ devId = Math.random().toString(36).slice(2,8); }
 
 const meMarker = L.marker([0,0], {icon:icon('<div class="me"></div>', 20), zIndexOffset:1000, interactive:false});
-function blink(){
+// Takt: 5 s versteckt, 2 s sichtbar
+const HIDE_MS = 5000, SHOW_MS = 2000;
+let hideT = null;
+function showMe(){
   if (!me) return;
   meMarker.setLatLng([me.lat, me.lng]).addTo(map);
-  setTimeout(() => map.removeLayer(meMarker), 2000);
+  clearTimeout(hideT);
+  hideT = setTimeout(() => map.removeLayer(meMarker), SHOW_MS);
 }
 function sendPos(){
   if (!me) return;
   root.child('pos/' + devId).set({lat:+me.lat.toFixed(6), lng:+me.lng.toFixed(6), acc, t:firebase.database.ServerValue.TIMESTAMP}).catch(()=>{});
 }
-setInterval(() => { blink(); sendPos(); }, 15000);
+setInterval(showMe, HIDE_MS + SHOW_MS);
+setInterval(sendPos, 14000);
+const blink = showMe;
 
 function banner(t){ const b = $('banner'); b.textContent = t || ''; b.style.display = t ? 'block' : 'none'; }
 if ('geolocation' in navigator){
@@ -125,4 +133,118 @@ async function checkUpdate(){
 setInterval(checkUpdate, 60000);
 
 $('go').onclick = () => { if (step === null) return; const t = target(); map.flyTo([t.lat, t.lng], 17); };
+$('meBtn').onclick = () => {
+  if (!me){ toast('📍 Standort wird noch gesucht…'); return; }
+  map.flyTo([me.lat, me.lng], 17);
+  setTimeout(showMe, 400);
+};
+
+// ---------- Start-Bildschirm (schaltet Ton & Bildschirm-wach frei) ----------
+const msgAudio = $('msgAudio');
+let actx = null, unlocked = false;
+const SILENT = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YQAAAAA=';
+$('startBtn').onclick = () => {
+  $('startScreen').classList.add('hide');
+  try { actx = new (window.AudioContext || window.webkitAudioContext)(); actx.resume(); } catch(e){}
+  try { msgAudio.src = SILENT; const p = msgAudio.play(); if (p) p.then(() => msgAudio.pause()).catch(()=>{}); } catch(e){}
+  unlocked = true;
+  keepAwake();
+  showQueue();
+};
+
+function chime(){
+  try {
+    if (!actx) return;
+    actx.resume();
+    [0, .18, .36].forEach((d, i) => {
+      const o = actx.createOscillator(), g = actx.createGain();
+      o.frequency.value = [880, 1175, 1568][i]; o.type = 'sine';
+      g.gain.setValueAtTime(.0001, actx.currentTime + d);
+      g.gain.exponentialRampToValueAtTime(.4, actx.currentTime + d + .02);
+      g.gain.exponentialRampToValueAtTime(.0001, actx.currentTime + d + .3);
+      o.connect(g); g.connect(actx.destination); o.start(actx.currentTime + d); o.stop(actx.currentTime + d + .32);
+    });
+  } catch(e){}
+}
+
+// ---------- Nachrichten der Leiter ----------
+const msgs = new Map(); // id -> {type, text, audio, t}
+let seen = new Set(), firstRun = false;
+try { const s = localStorage.getItem('sjSeen'); if (s) seen = new Set(JSON.parse(s)); else firstRun = true; } catch(e){ firstRun = true; }
+const loadedAt = Date.now();
+function saveSeen(){ try { localStorage.setItem('sjSeen', JSON.stringify([...seen].slice(-100))); } catch(e){} }
+
+const queue = [];
+let showing = null;
+function esc(s){ return String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function fmtTime(t){ try { return new Date(t).toLocaleTimeString('de-CH', {hour:'2-digit', minute:'2-digit'}); } catch(e){ return ''; } }
+
+function updateBadge(){
+  const n = [...msgs.keys()].filter(id => !seen.has(id)).length;
+  const b = $('unread'); b.textContent = n; b.style.display = n ? 'block' : 'none';
+}
+
+function showQueue(){
+  if (showing || !queue.length) return;
+  const id = queue.shift();
+  const m = msgs.get(id);
+  if (!m || seen.has(id)){ showQueue(); return; }
+  showing = id;
+  $('msgText').textContent = m.text || (m.type === 'audio' ? '🎙️ Sprachnachricht' : '');
+  if (m.type === 'audio' && m.audio){
+    msgAudio.style.display = 'block'; msgAudio.src = m.audio;
+    if (unlocked){ const p = msgAudio.play(); if (p) p.catch(()=>{}); }
+  } else { msgAudio.style.display = 'none'; msgAudio.removeAttribute('src'); }
+  $('msgOverlay').classList.add('show');
+  if (m.type !== 'audio') chime(); else if (!unlocked) chime();
+  try { if (navigator.vibrate) navigator.vibrate([300,120,300,120,500]); } catch(e){}
+}
+$('msgOk').onclick = () => {
+  if (showing){ seen.add(showing); saveSeen(); }
+  try { msgAudio.pause(); } catch(e){}
+  showing = null;
+  $('msgOverlay').classList.remove('show');
+  updateBadge();
+  showQueue();
+};
+
+const mref = root.child('msgs').limitToLast(30);
+mref.on('child_added', c => {
+  const m = c.val() || {};
+  msgs.set(c.key, m);
+  if (firstRun && !seen.has(c.key) && (m.t || 0) < loadedAt - 60000){ seen.add(c.key); saveSeen(); }
+  if (!seen.has(c.key)){ queue.push(c.key); showQueue(); }
+  updateBadge();
+});
+mref.on('child_removed', c => { msgs.delete(c.key); updateBadge(); });
+
+// ---------- Soundboard der Leiter ----------
+let srvOff = 0;
+db.ref('.info/serverTimeOffset').on('value', s => srvOff = s.val() || 0);
+const played = new Set();
+root.child('sfx').limitToLast(3).on('child_added', c => {
+  const d = c.val() || {};
+  if (played.has(c.key)) return;
+  played.add(c.key);
+  const age = Date.now() + srvOff - (d.t || 0);
+  if (age > 15000 || !window.SFX) return; // alte Sounds nicht nachspielen
+  const s = SFX.byId(d.id);
+  if (!s) return;
+  if (!actx){ try { actx = new (window.AudioContext || window.webkitAudioContext)(); } catch(e){} }
+  SFX.play(actx, d.id);
+  toast(`${s.emoji} <b>${s.name}</b>`);
+});
+
+$('inboxBtn').onclick = () => {
+  const list = [...msgs.entries()].sort((a, b) => (b[1].t || 0) - (a[1].t || 0));
+  $('inboxList').innerHTML = list.length ? list.map(([id, m]) =>
+    `<div><time>${fmtTime(m.t)}</time>${m.text ? esc(m.text) : ''}${m.type === 'audio' && m.audio ? `<audio controls playsinline preload="none" src="${m.audio}" style="width:100%;margin-top:4px"></audio>` : ''}</div>`
+  ).join('') : '<div>Noch keine Nachrichten.</div>';
+  list.forEach(([id]) => seen.add(id)); saveSeen(); updateBadge();
+  $('inboxOverlay').classList.add('show');
+};
+$('inboxClose').onclick = () => {
+  $('inboxOverlay').classList.remove('show');
+  document.querySelectorAll('#inboxList audio').forEach(a => { try { a.pause(); } catch(e){} });
+};
 })();

@@ -104,8 +104,93 @@ $('next').onclick = () => { if (step !== null && step < N) publish(step + 1); };
 $('back').onclick = () => { if (step > 0 && confirm('Einen Schritt zurück? Die Jungs sehen dann wieder das vorherige Ziel.')) publish(step - 1); };
 $('reset').onclick = () => {
   if (!confirm('Spiel neu starten? Fortschritt auf Ziel 1 und alle Handy-Standorte löschen.')) return;
-  publish(0); root.child('pos').remove(); order.length = 0;
+  publish(0); root.child('pos').remove(); root.child('msgs').remove(); root.child('sfx').remove(); order.length = 0;
 };
+
+// ---------- Nachrichten ----------
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+function sendMsg(data){
+  return root.child('msgs').push({...data, t:firebase.database.ServerValue.TIMESTAMP});
+}
+$('sendText').onclick = async () => {
+  const text = $('msgText').value.trim();
+  if (!text) return;
+  $('sendText').disabled = true;
+  try { await sendMsg({type:'text', text}); $('msgText').value = ''; }
+  catch(e){ alert('Senden fehlgeschlagen: ' + e.message + '\nSind die neuen Datenbank-Regeln veröffentlicht?'); }
+  $('sendText').disabled = false;
+};
+
+root.child('msgs').limitToLast(10).on('value', s => {
+  const list = [];
+  s.forEach(c => { list.unshift(c.val()); });
+  $('sent').innerHTML = list.map(m => {
+    const time = m.t ? new Date(m.t).toLocaleTimeString('de-CH', {hour:'2-digit', minute:'2-digit'}) : '';
+    return `<div>${time} · ${m.type === 'audio' ? '🎙️ Sprachmemo' : esc(m.text)}</div>`;
+  }).join('');
+});
+
+// Sprachmemo
+let rec = null, chunks = [], recStart = 0, recTimer = null, recData = null;
+const MAX_SEC = 60;
+function pickMime(){
+  if (!window.MediaRecorder) return null;
+  for (const t of ['audio/mp4', 'audio/webm;codecs=opus', 'audio/webm']) if (MediaRecorder.isTypeSupported(t)) return t;
+  return '';
+}
+$('recBtn').onclick = async () => {
+  if (rec && rec.state === 'recording'){ rec.stop(); return; }
+  const mime = pickMime();
+  if (mime === null){ alert('Dieser Browser kann keine Sprachmemos aufnehmen. Nimm Chrome.'); return; }
+  let stream;
+  try { stream = await navigator.mediaDevices.getUserMedia({audio:true}); }
+  catch(e){ alert('Kein Mikrofon-Zugriff. Bitte im Browser erlauben.'); return; }
+  chunks = [];
+  rec = new MediaRecorder(stream, mime ? {mimeType:mime, audioBitsPerSecond:32000} : {audioBitsPerSecond:32000});
+  rec.ondataavailable = e => { if (e.data.size) chunks.push(e.data); };
+  rec.onstop = () => {
+    stream.getTracks().forEach(t => t.stop());
+    clearInterval(recTimer);
+    $('recBtn').classList.remove('on'); $('recBtn').textContent = '🎙️ Sprachmemo aufnehmen'; $('recInfo').textContent = '';
+    const blob = new Blob(chunks, {type: rec.mimeType || mime || 'audio/webm'});
+    const fr = new FileReader();
+    fr.onload = () => { recData = fr.result; $('recAudio').src = recData; $('recPreview').style.display = 'block'; };
+    fr.readAsDataURL(blob);
+  };
+  rec.start();
+  recStart = Date.now();
+  $('recBtn').classList.add('on'); $('recBtn').textContent = '⏹ Stopp';
+  $('recPreview').style.display = 'none';
+  recTimer = setInterval(() => {
+    const s = Math.floor((Date.now() - recStart) / 1000);
+    $('recInfo').textContent = `${s}s / ${MAX_SEC}s`;
+    if (s >= MAX_SEC && rec.state === 'recording') rec.stop();
+  }, 250);
+};
+$('recSend').onclick = async () => {
+  if (!recData) return;
+  if (recData.length > 900000){ alert('Sprachmemo zu lang – bitte kürzer aufnehmen.'); return; }
+  $('recSend').disabled = true;
+  try { await sendMsg({type:'audio', audio:recData}); recData = null; $('recPreview').style.display = 'none'; }
+  catch(e){ alert('Senden fehlgeschlagen: ' + e.message + '\nSind die neuen Datenbank-Regeln veröffentlicht?'); }
+  $('recSend').disabled = false;
+};
+$('recDiscard').onclick = () => { recData = null; $('recPreview').style.display = 'none'; };
+
+// ---------- Soundboard ----------
+let actx = null;
+$('sfxGrid').innerHTML = SFX.list.map(s => `<button data-sfx="${s.id}"><span>${s.emoji}</span>${s.name}</button>`).join('');
+$('sfxGrid').addEventListener('click', e => {
+  const b = e.target.closest('button[data-sfx]'); if (!b) return;
+  const id = b.dataset.sfx;
+  b.classList.add('hit'); setTimeout(() => b.classList.remove('hit'), 400);
+  if ($('preview').checked){
+    if (!actx){ try { actx = new (window.AudioContext || window.webkitAudioContext)(); } catch(err){} }
+    SFX.play(actx, id);
+  } else {
+    root.child('sfx').push({id, t:firebase.database.ServerValue.TIMESTAMP}).catch(err => alert('Senden fehlgeschlagen: ' + err.message));
+  }
+});
 $('zoomKids').onclick = () => {
   const ll = order.filter(id => kids[id]).map(id => [kids[id].lat, kids[id].lng]);
   if (ll.length) map.fitBounds(L.latLngBounds(ll).pad(0.5), {maxZoom:17}); else alert('Noch kein Standort.');
