@@ -14,8 +14,9 @@ const N = GAME.missions.length;
 
 const map = L.map('map', {zoomControl:false}).setView([GAME.start.lat, GAME.start.lng], 16);
 // Karte ohne Strassennamen und Beschriftungen
-L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}',
-  {maxZoom:19, maxNativeZoom:16, attribution:'Tiles © Esri'}).addTo(map);
+// Schatzkarten-Look wie am Anfang; leicht "verwittert" (unscharf), damit Strassennamen kaum lesbar sind
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom:17, attribution:'© OpenStreetMap'}).addTo(map);
+map.setMaxZoom(17);
 const layer = L.layerGroup().addTo(map);
 const icon = (html, s, anchor) => L.divIcon({className:'', html, iconSize:[s,s], iconAnchor:anchor || [s/2,s/2]});
 
