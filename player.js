@@ -146,7 +146,7 @@ let actx = null, unlocked = false;
 const SILENT = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YQAAAAA=';
 $('startBtn').onclick = () => {
   $('startScreen').classList.add('hide');
-  try { actx = new (window.AudioContext || window.webkitAudioContext)(); actx.resume(); } catch(e){}
+  try { actx = new (window.AudioContext || window.webkitAudioContext)(); actx.resume(); if (window.SFX) SFX.preload(actx); } catch(e){}
   try { msgAudio.src = SILENT; const p = msgAudio.play(); if (p) p.then(() => msgAudio.pause()).catch(()=>{}); } catch(e){}
   unlocked = true;
   keepAwake();

@@ -185,7 +185,7 @@ $('sfxGrid').addEventListener('click', e => {
   const id = b.dataset.sfx;
   b.classList.add('hit'); setTimeout(() => b.classList.remove('hit'), 400);
   if ($('preview').checked){
-    if (!actx){ try { actx = new (window.AudioContext || window.webkitAudioContext)(); } catch(err){} }
+    if (!actx){ try { actx = new (window.AudioContext || window.webkitAudioContext)(); SFX.preload(actx); } catch(err){} }
     SFX.play(actx, id);
   } else {
     root.child('sfx').push({id, t:firebase.database.ServerValue.TIMESTAMP}).catch(err => alert('Senden fehlgeschlagen: ' + err.message));

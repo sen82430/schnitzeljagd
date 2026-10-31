@@ -25,11 +25,45 @@ const LIST = [
   {id:'grusel',   emoji:'👻', name:'Grusel'}
 ];
 
+// Echte Aufnahmen (MIT-Lizenz, siehe LIZENZ-SOUNDS.txt)
+const FILES = {muenze:'sfx-muenze.mp3', tada:'sfx-tada.mp3', gameover:'sfx-gameover.mp3', boing:'sfx-boing.mp3', grusel:'sfx-grusel.mp3', herz:'sfx-herz.mp3'};
+const buffers = {}, loading = {};
+function load(ctx, id){
+  if (buffers[id]) return Promise.resolve(buffers[id]);
+  if (!loading[id]) loading[id] = fetch(FILES[id] + '?v=' + (window.APP_VERSION || ''))
+    .then(r => r.arrayBuffer())
+    .then(ab => new Promise((ok, fail) => { const p = ctx.decodeAudioData(ab, ok, fail); if (p && p.then) p.then(ok, fail); }))
+    .then(b => (buffers[id] = b))
+    .catch(e => { delete loading[id]; throw e; });
+  return loading[id];
+}
+function preload(ctx){ if (ctx) Object.keys(FILES).forEach(id => load(ctx, id).catch(()=>{})); }
+
+let reverbBuf = null;
+function reverb(ctx){
+  if (reverbBuf && reverbBuf.sampleRate === ctx.sampleRate) return reverbBuf;
+  const len = Math.floor(ctx.sampleRate * 1.2); reverbBuf = ctx.createBuffer(2, len, ctx.sampleRate);
+  for (let c = 0; c < 2; c++){ const d = reverbBuf.getChannelData(c); for (let i = 0; i < len; i++) d[i] = (Math.random()*2-1) * Math.pow(1 - i/len, 3); }
+  return reverbBuf;
+}
+
 function play(ctx, id){
   if (!ctx) return;
   try { ctx.resume(); } catch(e){}
+  if (FILES[id]){
+    load(ctx, id).then(b => {
+      const src = ctx.createBufferSource(), g = ctx.createGain(); g.gain.value = 1;
+      src.buffer = b; src.connect(g); g.connect(ctx.destination); src.start();
+    }).catch(()=>{});
+    return;
+  }
   const T = ctx.currentTime + 0.03;
-  const out = ctx.createGain(); out.gain.value = 0.8; out.connect(ctx.destination);
+  const out = ctx.createGain(); out.gain.value = 0.75; out.connect(ctx.destination);
+  try {
+    const cv = ctx.createConvolver(); cv.buffer = reverb(ctx);
+    const wet = ctx.createGain(); wet.gain.value = 0.25;
+    out.connect(cv); cv.connect(wet); wet.connect(ctx.destination);
+  } catch(e){}
 
   function tone(f, s, d, type='sine', vol=.4, fEnd=null, attack=.01){
     const o = ctx.createOscillator(), g = ctx.createGain();
@@ -107,5 +141,5 @@ function play(ctx, id){
   }
 }
 
-window.SFX = {list: LIST, play, byId: id => LIST.find(s => s.id === id)};
+window.SFX = {list: LIST, play, preload, byId: id => LIST.find(s => s.id === id)};
 })();
