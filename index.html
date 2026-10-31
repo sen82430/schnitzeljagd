@@ -96,41 +96,10 @@ header h1 img{width:30px;height:30px}
   <h2 id="ttl">Lade…</h2>
   <p id="task"></p>
   <div class="proof" id="proof"></div>
-  <button id="proofBtn" class="proofBtn">📸 Beweis senden</button>
   <div class="btns">
     <button id="go">🗺️ Ziel zeigen</button>
     <button id="meBtn">📍 Mein Standort</button>
     <button id="inboxBtn" class="ico" aria-label="Nachrichten">📢<span id="unread"></span></button>
-  </div>
-</div>
-
-<div class="overlay" id="proofOverlay">
-  <div class="sheet">
-    <h2>📸 Beweis senden</h2>
-    <p id="proofFor"></p>
-    <div id="pChoose" class="pbtns">
-      <button id="photoBtn">📷 Foto machen</button>
-      <button id="videoBtn">🎥 Video aufnehmen</button>
-    </div>
-    <input type="file" id="photoInput" accept="image/*" capture="environment" hidden>
-    <div id="pRec" style="display:none">
-      <video id="camView" playsinline muted autoplay></video>
-      <div class="pbtns">
-        <button id="vRecBtn" class="rec">⏺ Aufnahme starten</button>
-        <button id="vFlip">🔄</button>
-      </div>
-      <div id="vTime" class="ptime"></div>
-    </div>
-    <div id="pPreview" style="display:none">
-      <img id="pImg" alt="" style="display:none">
-      <video id="pVid" controls playsinline style="display:none"></video>
-      <div class="pbtns">
-        <button id="pSend" class="send">✅ Senden</button>
-        <button id="pRetry">↩ Nochmal</button>
-      </div>
-    </div>
-    <div id="pStatus" class="pstatus"></div>
-    <button class="main" id="proofClose" style="margin-top:12px">Schliessen</button>
   </div>
 </div>
 
