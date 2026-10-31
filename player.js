@@ -289,7 +289,17 @@ $('inboxClose').onclick = () => {
 const VMAX = 40;                  // max. Videolänge in Sekunden
 const MAX_BYTES = 11 * 1024 * 1024; // Obergrenze für die Datenbank
 let pData = null, pType = null, pMission = null;
-let camStream = null, facing = 'environment', vrec = null, vchunks = [], vTimer = null, vStart = 0;
+let camStream = null, facing = 'environment', vrec = null, vchunks = [], vTimer = null, vStart = 0, pVidUrl = null;
+// Aufgenommene WebM-Videos haben oft keine Längenangabe (zeigt 0 s) – so wird sie ermittelt
+function fixDuration(v){
+  v.onloadedmetadata = () => {
+    if (v.duration === Infinity || isNaN(v.duration) || v.duration === 0){
+      const back = () => { v.removeEventListener('timeupdate', back); v.currentTime = 0; };
+      v.addEventListener('timeupdate', back);
+      v.currentTime = 1e101;
+    }
+  };
+}
 
 function pShow(part){
   ['pChoose','pRec','pPreview'].forEach(id => $(id).style.display = id === part ? (id === 'pChoose' ? 'flex' : 'block') : 'none');
@@ -344,7 +354,7 @@ async function startCam(){
   stopCam();
   try {
     camStream = await navigator.mediaDevices.getUserMedia({
-      video:{facingMode:{ideal:facing}, width:{ideal:640}, height:{ideal:480}, frameRate:{ideal:24}}, audio:true});
+      video:{facingMode:{ideal:facing}, width:{ideal:480}, height:{ideal:360}, frameRate:{ideal:15, max:20}}, audio:true});
   } catch(e){
     pStatus('⚠️ Kamera/Mikrofon nicht erlaubt. Bitte erlauben und nochmals versuchen.'); pShow('pChoose'); return false;
   }
@@ -354,7 +364,8 @@ async function startCam(){
 }
 function pickVideoMime(){
   if (!window.MediaRecorder) return null;
-  for (const t of ['video/mp4', 'video/webm;codecs=vp8,opus', 'video/webm']) if (MediaRecorder.isTypeSupported(t)) return t;
+  // WebM zuerst (Android/Chrome: zuverlässig abspielbar), MP4 nur für iPhones
+  for (const t of ['video/webm;codecs=vp8,opus', 'video/webm', 'video/mp4;codecs=avc1,mp4a', 'video/mp4']) if (MediaRecorder.isTypeSupported(t)) return t;
   return '';
 }
 $('videoBtn').onclick = async () => {
@@ -373,7 +384,7 @@ $('vRecBtn').onclick = () => {
   if (!camStream) return;
   const mime = pickVideoMime();
   vchunks = [];
-  try { vrec = new MediaRecorder(camStream, {...(mime ? {mimeType:mime} : {}), videoBitsPerSecond:450000, audioBitsPerSecond:48000}); }
+  try { vrec = new MediaRecorder(camStream, {...(mime ? {mimeType:mime} : {}), videoBitsPerSecond:250000, audioBitsPerSecond:32000}); }
   catch(e){ vrec = new MediaRecorder(camStream); }
   vrec.ondataavailable = ev => { if (ev.data && ev.data.size) vchunks.push(ev.data); };
   vrec.onstop = () => {
@@ -384,7 +395,10 @@ $('vRecBtn').onclick = () => {
     const fr = new FileReader();
     fr.onload = () => {
       pData = fr.result; pType = 'video';
-      $('pVid').src = pData; $('pVid').style.display = 'block'; $('pImg').style.display = 'none';
+      try { if (pVidUrl) URL.revokeObjectURL(pVidUrl); } catch(e){}
+      pVidUrl = URL.createObjectURL(blob);
+      fixDuration($('pVid'));
+      $('pVid').src = pVidUrl; $('pVid').style.display = 'block'; $('pImg').style.display = 'none';
       pShow('pPreview'); pStatus(`Länge ok (${(blob.size/1024/1024).toFixed(1)} MB)`);
     };
     fr.readAsDataURL(blob);

@@ -189,6 +189,16 @@ function flashTitle(txt){
 }
 
 // ---------- Beweise (Fotos / Videos) ----------
+// Aufgenommene Videos haben oft keine Längenangabe (zeigt 0 s) – so wird sie ermittelt
+function fixDuration(v){
+  v.addEventListener('loadedmetadata', () => {
+    if (v.duration === Infinity || isNaN(v.duration) || v.duration === 0){
+      const back = () => { v.removeEventListener('timeupdate', back); v.currentTime = 0; };
+      v.addEventListener('timeupdate', back);
+      v.currentTime = 1e101;
+    }
+  }, {once:true});
+}
 var proofsList = [], pFirst = true, pSeenUntil = Date.now();
 const openMedia = {}; // id -> dataURL (bereits geladen)
 const kb = n => n > 1048576 ? (n / 1048576 / 1.37).toFixed(1) + ' MB' : Math.round(n / 1024 / 1.37) + ' KB';
@@ -197,9 +207,10 @@ function renderProofs(){
   $('pList').innerHTML = proofsList.length ? proofsList.map(([k, p]) => {
     const m = GAME.missions[p.mission] || {name:'?'};
     const canOk = p.mission === s && s < N;
-    const media = openMedia[k] ? (p.type === 'video'
-      ? `<div class="media"><video src="${openMedia[k]}" controls playsinline></video></div>`
-      : `<div class="media"><img src="${openMedia[k]}" alt=""></div>`) : `<div class="media" id="md-${k}"></div>`;
+    const om = openMedia[k];
+    const media = om ? (p.type === 'video'
+      ? `<div class="media"><video data-vid="${k}" src="${om.url}" controls playsinline preload="metadata"></video><a href="${om.url}" download="beweis-ziel${p.mission + 1}${om.ext}">⬇ Video herunterladen</a></div>`
+      : `<div class="media"><img src="${om.url}" alt=""></div>`) : '';
     return `<div class="it ${(p.t || 0) > pSeenUntil ? 'new' : ''}">
       <div class="tx"><small>${letterOf(p.dev)} · ${hhmm(p.t)} · ${kb(p.size || 0)}</small>${p.type === 'video' ? '🎥' : '📷'} Ziel ${p.mission + 1}: ${esc(m.name)}</div>
       <div class="acts">${openMedia[k] ? '' : `<button data-pv="${k}">${p.type === 'video' ? '▶ Ansehen' : '👁 Ansehen'}</button>`}
@@ -207,6 +218,7 @@ function renderProofs(){
         <button data-pdel="${k}" title="Löschen">🗑</button></div>
       ${media}</div>`;
   }).join('') : '<div class="it"><div class="tx"><small>Noch keine Beweise.</small></div></div>';
+  $('pList').querySelectorAll('video[data-vid]').forEach(fixDuration);
   $('pCount').textContent = proofsList.length ? `(${proofsList.length})` : '';
   $('pClear').style.display = proofsList.length > 1 ? 'block' : 'none';
 }
@@ -225,7 +237,14 @@ $('pList').addEventListener('click', async e => {
   pSeenUntil = Date.now() + serverOffset;
   if (b.dataset.pv){
     const k = b.dataset.pv; b.disabled = true; b.textContent = '⏳ lädt…';
-    try { const d = await root.child('proofData/' + k).once('value'); openMedia[k] = (d.val() || {}).data || ''; }
+    try {
+      const d = await root.child('proofData/' + k).once('value');
+      const data = (d.val() || {}).data || '';
+      if (!data) throw new Error('Datei leer');
+      const blob = await (await fetch(data)).blob();
+      const mime = blob.type || '';
+      openMedia[k] = {url: URL.createObjectURL(blob), ext: mime.includes('mp4') ? '.mp4' : mime.includes('webm') ? '.webm' : mime.includes('jpeg') ? '.jpg' : ''};
+    }
     catch(err){ alert('Laden fehlgeschlagen: ' + err.message); }
     renderProofs();
   }
@@ -236,6 +255,7 @@ $('pList').addEventListener('click', async e => {
   if (b.dataset.pdel){
     const k = b.dataset.pdel;
     if (!confirm('Diesen Beweis löschen?')) return;
+    if (openMedia[k]) URL.revokeObjectURL(openMedia[k].url);
     delete openMedia[k];
     root.child('proofData/' + k).remove(); root.child('proofs/' + k).remove();
   }
